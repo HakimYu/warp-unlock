@@ -209,29 +209,7 @@ setup_transparent_proxy() {
         } >> /etc/gai.conf
     fi
     
-    # 安装 redsocks (透明代理工具)
-    case $OS in
-        ubuntu|debian)
-            apt-get install -y redsocks iptables >/dev/null 2>&1 || {
-                echo -e "${RED}安装 redsocks/iptables 失败${NC}"
-                exit 1
-            }
-            ;;
-        centos|rhel|rocky|almalinux|fedora)
-            if command -v dnf &>/dev/null; then
-                dnf install -y redsocks iptables >/dev/null 2>&1 || {
-                    echo -e "${RED}安装 redsocks/iptables 失败${NC}"
-                    exit 1
-                }
-            else
-                yum install -y redsocks iptables >/dev/null 2>&1 || {
-                    echo -e "${RED}安装 redsocks/iptables 失败${NC}"
-                    exit 1
-                }
-            fi
-            ;;
-    esac
-    
+    # 先写 redsocks 配置，再安装包；部分 Debian/Ubuntu postinst 会立即校验 /etc/redsocks.conf。
     # 创建 redsocks 配置。不要在首行写 # 注释，部分 redsocks 版本会解析失败。
     write_managed_file /etc/redsocks.conf 0644 << 'EOF'
 base {
@@ -252,6 +230,30 @@ redsocks {
 }
 EOF
 
+    # 安装 redsocks (透明代理工具)
+    case $OS in
+        ubuntu|debian)
+            apt-get install -y redsocks iptables || {
+                echo -e "${RED}安装 redsocks/iptables 失败${NC}"
+                exit 1
+            }
+            ;;
+        centos|rhel|rocky|almalinux|fedora)
+            if command -v dnf &>/dev/null; then
+                dnf install -y redsocks iptables || {
+                    echo -e "${RED}安装 redsocks/iptables 失败${NC}"
+                    exit 1
+                }
+            else
+                yum install -y redsocks iptables || {
+                    echo -e "${RED}安装 redsocks/iptables 失败${NC}"
+                    exit 1
+                }
+            fi
+            ;;
+    esac
+    systemctl disable --now redsocks 2>/dev/null || true
+    
     # 保存 Cloudflare 分流开关
     write_managed_file /etc/default/warp-google 0644 << EOF
 # Managed by warp-unlock
