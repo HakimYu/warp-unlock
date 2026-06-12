@@ -232,9 +232,8 @@ setup_transparent_proxy() {
             ;;
     esac
     
-    # 创建 redsocks 配置
+    # 创建 redsocks 配置。不要在首行写 # 注释，部分 redsocks 版本会解析失败。
     write_managed_file /etc/redsocks.conf 0644 << 'EOF'
-# Managed by warp-unlock
 base {
     log_debug = off;
     log_info = on;
@@ -404,7 +403,10 @@ stop_redsocks() {
 
 start_redsocks() {
     stop_redsocks
-    redsocks -c /etc/redsocks.conf
+    if ! redsocks -c /etc/redsocks.conf; then
+        echo "redsocks 启动失败，请检查 /etc/redsocks.conf"
+        exit 1
+    fi
     sleep 1
 
     if [ -f "$REDSOCKS_PID_FILE" ] && kill -0 "$(cat "$REDSOCKS_PID_FILE" 2>/dev/null)" 2>/dev/null; then
