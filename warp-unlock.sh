@@ -7,6 +7,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 # 备份已存在的系统文件，避免重复运行时无提示覆盖用户配置
@@ -53,14 +55,46 @@ remove_gai_precedence() {
 }
 
 
+print_line() {
+    echo -e "${DIM}──────────────────────────────────────────────${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}!${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+pause_return() {
+    echo ""
+    read -r -p "按回车键返回菜单..." _
+}
+
+confirm_action() {
+    local prompt="$1"
+    local answer
+
+    read -r -p "$prompt [y/N]: " answer
+    case "$answer" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # 显示横幅
 show_banner() {
     clear
-    echo -e "${CYAN}"
-    echo "╔════════════════════════════════════════════════════╗"
-    echo "║     🌐 WARP 一键脚本 - Google 自动解锁 🌐           ║"
-    echo "║         使用 Cloudflare 官方客户端                  ║"
-    echo "╚════════════════════════════════════════════════════╝"
+    echo -e "${CYAN}${BOLD}"
+    echo "╔══════════════════════════════════════════════╗"
+    echo "║              warp-unlock                    ║"
+    echo "║       Google 流量自动通过 WARP              ║"
+    echo "╚══════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
 
@@ -131,11 +165,11 @@ EOF
     esac
     
     if ! command -v warp-cli &>/dev/null; then
-        echo -e "${RED}WARP 安装失败${NC}"
+        print_error "WARP 安装失败"
         exit 1
     fi
-    
-    echo -e "${GREEN}✓ WARP 客户端已安装${NC}"
+
+    print_success "WARP 客户端已安装"
 }
 
 # 配置 WARP
@@ -179,7 +213,7 @@ configure_warp() {
     STATUS=$(warp-cli --accept-tos status 2>/dev/null || warp-cli status 2>/dev/null || true)
     echo -e "状态: ${GREEN}$STATUS${NC}"
     
-    echo -e "${GREEN}✓ WARP 配置完成${NC}"
+    print_success "WARP 配置完成"
 }
 
 # 配置透明代理 (让 Google 流量自动走 WARP)
@@ -447,7 +481,7 @@ EOF
     systemctl daemon-reload
     systemctl enable warp-google 2>/dev/null
     
-    echo -e "${GREEN}✓ 透明代理配置完成${NC}"
+    print_success "透明代理配置完成"
 }
 
 # 测试连接
@@ -459,7 +493,7 @@ test_connection() {
     # 测试 Google
     GOOGLE_TEST=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" https://www.google.com)
     if [ "$GOOGLE_TEST" = "200" ]; then
-        echo -e "${GREEN}✓ Google 连接成功！${NC}"
+        print_success "Google 连接成功"
     else
         echo -e "${YELLOW}Google 测试返回: $GOOGLE_TEST${NC}"
     fi
@@ -540,18 +574,22 @@ case "$1" in
         echo "WARP 已卸载"
         ;;
     *)
-        echo "WARP 管理工具"
+        echo "warp-unlock 管理工具"
         echo ""
         echo "用法: warp <命令>"
         echo ""
-        echo "命令:"
-        echo "  status    查看状态"
-        echo "  start     启动 WARP"
-        echo "  stop      停止 WARP"
-        echo "  restart   重启 WARP"
-        echo "  test      测试 Google"
-        echo "  ip        查看 IP"
-        echo "  uninstall 卸载 WARP"
+        echo "常用命令:"
+        echo "  status     查看 WARP、redsocks 和 iptables 状态"
+        echo "  ip         对比直连 IP 和 WARP IP"
+        echo "  test       测试 Google 连接"
+        echo ""
+        echo "服务控制:"
+        echo "  start      启动 WARP 和 Google 透明代理"
+        echo "  stop       停止 WARP 和 Google 透明代理"
+        echo "  restart    重启服务"
+        echo ""
+        echo "维护:"
+        echo "  uninstall  卸载 WARP 和本脚本配置"
         ;;
 esac
 EOF
@@ -565,12 +603,10 @@ do_install() {
     create_management
     test_connection
     
-    echo -e "\n${GREEN}╔════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║            🎉 安装完成！Google 已解锁 🎉            ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════════════════╝${NC}"
-    echo -e "\n${YELLOW}所有 Google 流量现已自动通过 WARP！${NC}"
-    echo -e "${YELLOW}无需任何额外配置，直接访问即可。${NC}"
-    echo -e "\n管理命令: ${CYAN}warp {status|start|stop|restart|test|ip|uninstall}${NC}\n"
+    echo -e "\n${GREEN}${BOLD}安装完成，Google 透明代理已启用${NC}"
+    print_line
+    echo -e "${YELLOW}说明:${NC} 仅 Google IPv4 流量会自动通过 WARP。"
+    echo -e "${YELLOW}管理:${NC} ${CYAN}warp {status|ip|test|start|stop|restart|uninstall}${NC}\n"
 }
 
 # 卸载
@@ -615,7 +651,8 @@ do_uninstall() {
     esac
     systemctl daemon-reload 2>/dev/null
     
-    echo -e "${GREEN}✓ WARP 已完全卸载${NC}\n"
+    print_success "WARP 已完全卸载"
+    echo ""
 }
 
 # 查看状态
@@ -686,36 +723,100 @@ do_test_google() {
 # 启动服务
 do_start() {
     echo -e "\n${CYAN}启动 WARP 服务...${NC}"
-    warp-cli connect 2>/dev/null
-    /usr/local/bin/warp-google start 2>/dev/null
-    echo -e "${GREEN}✓ WARP 已启动${NC}\n"
+
+    if ! command -v warp-cli &>/dev/null || [ ! -x /usr/local/bin/warp-google ]; then
+        print_error "WARP 尚未安装，请先选择 1 安装 / 更新"
+        echo ""
+        return 1
+    fi
+
+    warp-cli connect 2>/dev/null || print_warning "WARP 连接命令返回异常，请稍后查看状态"
+    /usr/local/bin/warp-google start || return 1
+    print_success "WARP 已启动"
+    echo ""
 }
 
 # 停止服务
 do_stop() {
     echo -e "\n${CYAN}停止 WARP 服务...${NC}"
-    /usr/local/bin/warp-google stop 2>/dev/null
-    warp-cli disconnect 2>/dev/null
-    echo -e "${GREEN}✓ WARP 已停止${NC}\n"
+
+    if [ ! -x /usr/local/bin/warp-google ] && ! command -v warp-cli &>/dev/null; then
+        print_error "WARP 尚未安装"
+        echo ""
+        return 1
+    fi
+
+    [ -x /usr/local/bin/warp-google ] && /usr/local/bin/warp-google stop
+    command -v warp-cli &>/dev/null && warp-cli disconnect 2>/dev/null
+    print_success "WARP 已停止"
+    echo ""
 }
 
 # 显示菜单
 show_menu() {
-    echo -e "${YELLOW}请选择操作:${NC}\n"
-    echo -e "  ${GREEN}1.${NC} 安装 WARP (解锁 Gemini和商店等)"
-    echo -e "  ${GREEN}2.${NC} 卸载 WARP"
-    echo -e "  ${GREEN}3.${NC} 查看状态"
-    echo -e "  ${GREEN}0.${NC} 退出\n"
-    
-    read -p "请输入选项 [0-3]: " choice
-    
-    case $choice in
-        1) do_install ;;
-        2) do_uninstall ;;
-        3) do_status; do_show_ip; do_test_google ;;
-        0) echo -e "\n${GREEN}再见！${NC}\n"; exit 0 ;;
-        *) echo -e "\n${RED}无效选项${NC}\n" ;;
-    esac
+    local choice
+
+    while true; do
+        show_banner
+        echo -e "${GREEN}系统:${NC} $OS $VERSION ${CODENAME:+($CODENAME) }$ARCH"
+        echo -e "${DIM}模式: 仅代理 Google IPv4 流量，不接管全局网络${NC}"
+        print_line
+        echo -e "${BOLD}请选择操作${NC}\n"
+        echo -e "  ${GREEN}1${NC}) 安装 / 更新      ${DIM}安装 WARP，并配置 Google 透明代理${NC}"
+        echo -e "  ${GREEN}2${NC}) 查看状态         ${DIM}查看 WARP、redsocks 和 iptables 状态${NC}"
+        echo -e "  ${GREEN}3${NC}) 查看 IP          ${DIM}对比直连 IP 和 WARP IP${NC}"
+        echo -e "  ${GREEN}4${NC}) 测试 Google      ${DIM}检查 Google 连接状态${NC}"
+        echo -e "  ${GREEN}5${NC}) 启动服务         ${DIM}连接 WARP 并启动透明代理${NC}"
+        echo -e "  ${GREEN}6${NC}) 停止服务         ${DIM}停止透明代理并断开 WARP${NC}"
+        echo -e "  ${RED}7${NC}) 卸载             ${DIM}移除 WARP、规则和本脚本配置${NC}"
+        echo -e "  ${YELLOW}0${NC}) 退出"
+        print_line
+
+        read -r -p "请输入选项 [0-7]: " choice
+
+        case "$choice" in
+            1)
+                do_install
+                pause_return
+                ;;
+            2)
+                do_status
+                pause_return
+                ;;
+            3)
+                do_show_ip
+                pause_return
+                ;;
+            4)
+                do_test_google
+                pause_return
+                ;;
+            5)
+                do_start
+                pause_return
+                ;;
+            6)
+                do_stop
+                pause_return
+                ;;
+            7)
+                if confirm_action "确认卸载 WARP 和本脚本配置吗？"; then
+                    do_uninstall
+                else
+                    print_warning "已取消卸载"
+                fi
+                pause_return
+                ;;
+            0|q|Q)
+                echo -e "\n${GREEN}再见！${NC}\n"
+                exit 0
+                ;;
+            *)
+                print_error "无效选项：$choice"
+                pause_return
+                ;;
+        esac
+    done
 }
 
 # 主入口
@@ -736,8 +837,6 @@ main() {
     fi
     
     ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
-    echo -e "${GREEN}系统: $OS $VERSION ($CODENAME) $ARCH${NC}\n"
-    
     show_menu
 }
 
