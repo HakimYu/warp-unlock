@@ -217,7 +217,6 @@ base {
     log_info = on;
     log = "syslog:daemon";
     daemon = on;
-    pidfile = "/run/warp-google-redsocks.pid";
     redirector = iptables;
 }
 
@@ -405,23 +404,26 @@ stop_redsocks() {
 
 start_redsocks() {
     stop_redsocks
+
+    before_pids=" $(pgrep -x redsocks 2>/dev/null | tr '\n' ' ') "
     if ! redsocks -c /etc/redsocks.conf; then
         echo "redsocks 启动失败，请检查 /etc/redsocks.conf"
         exit 1
     fi
     sleep 1
 
-    if [ -f "$REDSOCKS_PID_FILE" ] && kill -0 "$(cat "$REDSOCKS_PID_FILE" 2>/dev/null)" 2>/dev/null; then
-        return
-    fi
+    for pid in $(pgrep -x redsocks 2>/dev/null); do
+        case "$before_pids" in
+            *" $pid "*) ;;
+            *)
+                echo "$pid" > "$REDSOCKS_PID_FILE"
+                return
+                ;;
+        esac
+    done
 
-    # 兼容少数 redsocks 版本不写 pidfile 的情况。
-    pid=$(pgrep -f "redsocks.*-c /etc/redsocks.conf" | head -n 1)
-    if [ -z "$pid" ]; then
-        echo "redsocks 启动失败，请检查 /etc/redsocks.conf"
-        exit 1
-    fi
-    echo "$pid" > "$REDSOCKS_PID_FILE"
+    echo "redsocks 启动失败，未找到新启动的 redsocks 进程"
+    exit 1
 }
 
 start() {
