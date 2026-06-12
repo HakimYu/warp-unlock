@@ -186,11 +186,6 @@ configure_warp() {
 setup_transparent_proxy() {
     echo -e "\n${CYAN}[3/3] 配置透明代理规则...${NC}"
 
-    local enable_cloudflare_proxy=0
-    read -p "是否同时代理 Cloudflare IP 段？可能影响大量使用 Cloudflare CDN 的网站 [y/N]: " cf_choice
-    case "$cf_choice" in
-        y|Y|yes|YES) enable_cloudflare_proxy=1 ;;
-    esac
     
     # 禁用 IPv6 访问 Google（避免 IPv4/IPv6 不匹配导致被检测）
     echo -e "配置 IPv6 规则..."
@@ -253,12 +248,6 @@ EOF
     esac
     systemctl disable --now redsocks 2>/dev/null || true
     
-    # 保存 Cloudflare 分流开关
-    write_managed_file /etc/default/warp-google 0644 << EOF
-# Managed by warp-unlock
-ENABLE_CLOUDFLARE_PROXY=$enable_cloudflare_proxy
-EOF
-
     # 创建 iptables 规则脚本
     write_managed_file /usr/local/bin/warp-google 0755 << 'SCRIPT'
 #!/bin/bash
@@ -266,12 +255,9 @@ EOF
 REDSOCKS_PID_FILE="/run/warp-google-redsocks.pid"
 IP_CACHE_DIR="/var/cache/warp-unlock"
 IP_CACHE_MAX_AGE=86400
-ENABLE_CLOUDFLARE_PROXY=0
-[ -f /etc/default/warp-google ] && . /etc/default/warp-google
 
-# Google / Cloudflare 官方 IPv4 段 API。优先动态获取，失败时使用缓存，再失败才使用 fallback。
+# Google 官方 IPv4 段 API。优先动态获取，失败时使用缓存，再失败才使用 fallback。
 GOOGLE_IP_API_URL="https://www.gstatic.com/ipranges/goog.json"
-CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
 
 FALLBACK_GOOGLE_IPS="
 8.8.4.0/24
@@ -291,23 +277,6 @@ FALLBACK_GOOGLE_IPS="
 216.239.32.0/19
 "
 
-FALLBACK_CLOUDFLARE_IPS="
-173.245.48.0/20
-103.21.244.0/22
-103.22.200.0/22
-103.31.4.0/22
-141.101.64.0/18
-108.162.192.0/18
-190.93.240.0/20
-188.114.96.0/20
-197.234.240.0/22
-198.41.128.0/17
-162.158.0.0/15
-104.16.0.0/13
-104.24.0.0/14
-172.64.0.0/13
-131.0.72.0/22
-"
 
 cache_is_fresh() {
     local cache_file="$1"
@@ -357,37 +326,9 @@ get_google_ips() {
     fi
 }
 
-get_cloudflare_ips() {
-    local cache_file="$IP_CACHE_DIR/cloudflare-ips-v4.txt"
-    local ips
-
-    if [ "$ENABLE_CLOUDFLARE_PROXY" != "1" ]; then
-        return
-    fi
-
-    if cache_is_fresh "$cache_file"; then
-        cat "$cache_file"
-        return
-    fi
-
-    ips=$(curl -fsSL --max-time 10 "$CLOUDFLARE_IPV4_URL" 2>/dev/null \
-        | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}' \
-        | sort -u)
-
-    if [ -n "$ips" ]; then
-        mkdir -p "$IP_CACHE_DIR"
-        echo "$ips" > "$cache_file"
-        echo "$ips"
-    else
-        read_cache_or_fallback "Cloudflare" "$cache_file" "$FALLBACK_CLOUDFLARE_IPS"
-    fi
-}
 
 get_proxy_ips() {
-    {
-        get_google_ips
-        get_cloudflare_ips
-    } | grep -v '^[[:space:]]*$' | sort -u
+    get_google_ips | grep -v '^[[:space:]]*$' | sort -u
 }
 
 stop_redsocks() {
@@ -427,7 +368,7 @@ start_redsocks() {
 }
 
 start() {
-    echo "启动 Google/Cloudflare 透明代理..."
+    echo "启动 Google 透明代理..."
     
     # 启动本脚本管理的 redsocks，避免杀掉系统里其他 redsocks 实例
     start_redsocks
@@ -435,7 +376,7 @@ start() {
     # 创建新的 iptables 链
     iptables -t nat -N WARP_UNLOCK 2>/dev/null || iptables -t nat -F WARP_UNLOCK
     
-    # 添加 Google / Cloudflare IP 规则
+    # 添加 Google IP 规则
     for ip in $(get_proxy_ips); do
         iptables -t nat -A WARP_UNLOCK -d $ip -p tcp -j REDIRECT --to-ports 12345
     done
@@ -443,11 +384,11 @@ start() {
     # 应用到 OUTPUT 链
     iptables -t nat -C OUTPUT -j WARP_UNLOCK 2>/dev/null || iptables -t nat -A OUTPUT -j WARP_UNLOCK
     
-    echo "Google/Cloudflare 透明代理已启动"
+    echo "Google 透明代理已启动"
 }
 
 stop() {
-    echo "停止 Google/Cloudflare 透明代理..."
+    echo "停止 Google 透明代理..."
     stop_redsocks
     iptables -t nat -D OUTPUT -j WARP_UNLOCK 2>/dev/null
     iptables -t nat -F WARP_UNLOCK 2>/dev/null
@@ -456,7 +397,7 @@ stop() {
     iptables -t nat -D OUTPUT -j WARP_GOOGLE 2>/dev/null
     iptables -t nat -F WARP_GOOGLE 2>/dev/null
     iptables -t nat -X WARP_GOOGLE 2>/dev/null
-    echo "Google/Cloudflare 透明代理已停止"
+    echo "Google 透明代理已停止"
 }
 
 status() {
@@ -490,7 +431,7 @@ SCRIPT
     write_managed_file /etc/systemd/system/warp-google.service 0644 << 'EOF'
 # Managed by warp-unlock
 [Unit]
-Description=WARP Google/Cloudflare Transparent Proxy
+Description=WARP Google Transparent Proxy
 After=network.target warp-svc.service
 
 [Service]
@@ -588,7 +529,6 @@ case "$1" in
         rm -f /etc/systemd/system/warp-google.service
         rm -f /usr/local/bin/warp-google
         rm -f /etc/redsocks.conf
-        rm -f /etc/default/warp-google
         rm -f /run/warp-google-redsocks.pid
         rm -rf /var/cache/warp-unlock
         rm -f /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
@@ -645,7 +585,6 @@ do_uninstall() {
     rm -f /usr/local/bin/warp-google
     rm -f /usr/local/bin/warp
     rm -f /etc/redsocks.conf
-    rm -f /etc/default/warp-google
     rm -f /run/warp-google-redsocks.pid
     rm -rf /var/cache/warp-unlock
     
